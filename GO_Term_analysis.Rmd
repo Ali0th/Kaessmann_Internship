@@ -1,0 +1,144 @@
+---
+title: "GO Term Analysis for Mature vs Juc Marker Genes "
+output: pdf_document
+---
+
+In this script I will load the list of Marker Genes between the juvenile and mature spotted gar datasets. 
+ident.1 = "Juvenile", ident.2 = "Mature" 
+
+Then I will perform a GO Term analysis to look for enrichment for development related GO terms. 
+
+We use the output of our custom OrthoFinder run, to reliably identify genes that are orthologous to the mouse. OrthoFinder takes as input the proteomes for the species you want to analyse and from these it automatically infers the orthogroups for your species. 
+
+```{r}
+library(clusterProfiler)
+library(org.Mm.eg.db)  # Load the mouse OrgDb package
+library(readr)
+library(dplyr)
+library(biomaRt)
+library(stringr)
+library(rtracklayer)
+```
+
+
+
+```{r}
+#Read in the orthogroups file
+mmus.orthologs <- read_tsv(file = "~/share/MVlachonikolou/Correlations/Mmus__v__Locu.tsv")
+
+#Expanding the ortholog file
+mmus.orthologs <- mmus.orthologs %>%
+  separate_rows(Mmus, sep = ", ") %>%
+  separate_rows(Locu, sep = ", ") %>%
+  dplyr::select("Mmus", "Locu")
+
+mmus.orthologs$Mmus <- str_replace(mmus.orthologs$Mmus, "\\.\\d", "")
+```
+
+
+```{r}
+#Convert RefSeq IDs to Gene Symbols
+# Connect to the Ensembl BioMart database
+ensembl <- useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+
+# Convert RefSeq protein IDs to gene symbols
+ids <- mmus.orthologs$Mmus  # Replace with your list of IDs
+
+gene_info <- getBM(
+  attributes = c("refseq_peptide", "ensembl_gene_id", "external_gene_name"),
+  filters = 'refseq_peptide',
+  values = ids,
+  mart = ensembl
+)
+
+# View the converted IDs
+print(gene_info)
+```
+
+
+
+```{r}
+clusterj.m.markers <- read.csv("~/share/MVlachonikolou/Spotted-Gar/Seurat_maria/Integration_2500_noOrph/ident.1_ident.2_dataset/Juv_Mature_Integrate-Gar-ALL.csv")
+
+
+my_obj <- import("~/share/MVlachonikolou/Spotted-Gar/GCF_000242695.1_LepOcu1_genomic.gtf")
+class(my_obj)
+gtf<-data.frame(my_obj)
+
+clusterj.m.markers <- clusterj.m.markers %>%
+  rename(
+    "gene_id" = "X")
+```
+
+```{r}
+gtf_protein <- gtf %>% filter (type == "CDS")
+
+# Keep only one occurrence of each unique value
+gtf_protein <- gtf_protein %>%
+  distinct(protein_id, .keep_all = TRUE)
+
+clusterj.m.markers <-  merge(clusterj.m.markers, gtf_protein[ , c("gene_id", "protein_id", "product")], by = "gene_id", all.y = FALSE)
+```
+
+```{r}
+write.csv(clusterj.m.markers, "~/share/MVlachonikolou/Plots_for_140324_presentation/Juv_Mature_Integrate-Gar-ALL.csv", row.names = TRUE)
+```
+
+
+```{r}
+mmus.orthologs <- merge(mmus.orthologs, gene_info, by.x ="Mmus", by.y="refseq_peptide")
+
+
+clusterj.m.markers <- merge(mmus.orthologs, clusterj.m.markers, by.x ="Locu", by.y="protein_id", all.x = FALSE)
+
+
+j.m.markers <- clusterj.m.markers %>%
+  filter(avg_log2FC>0)
+
+
+
+m.j.markers <- clusterj.m.markers %>%
+  filter(avg_log2FC<0)
+```
+
+
+```{r}
+# Perform GO enrichment analysis
+go_enrichment_juv <- enrichGO(gene         = j.m.markers$ensembl_gene_id,
+                          OrgDb        = "org.Mm.eg.db",  # For spotted gar (example, adjust if necessary)
+                          keyType      = "ENSEMBL",
+                          ont          = "BP",    # Biological Process
+                          pAdjustMethod = "BH",
+                          pvalueCutoff  = 0.01,
+                          qvalueCutoff  = 0.05)
+
+# Visualize GO enrichment results
+juv <- dotplot(go_enrichment_juv, showCategory = 20, x="Count", font.size=9.5)  # Adjust showCategory as needed
+
+
+pdf("~/share/MVlachonikolou/Plots_for_140324_presentation/juv_enriched_GO.pdf", width =5.5, height = 5.5) 
+print(juv)
+dev.off()
+```
+
+```{r}
+# Perform GO enrichment analysis
+go_enrichment_mature <- enrichGO(gene         = m.j.markers$ensembl_gene_id,
+                          OrgDb        = "org.Mm.eg.db",  # For spotted gar (example, adjust if necessary)
+                          keyType      = "ENSEMBL",
+                          ont          = "BP",    # Biological Process
+                          pAdjustMethod = "BH",
+                          pvalueCutoff  = 0.01,
+                          qvalueCutoff  = 0.05)
+
+# Visualize GO enrichment results
+mature <- dotplot(go_enrichment_mature, showCategory = 20, font.size=6)  # Adjust showCategory as needed
+
+pdf("~/share/MVlachonikolou/Plots_for_140324_presentation/mature_enriched_GO.pdf", width =7, height = 7.5) 
+print(mature)
+dev.off()
+```
+
+
+
+
