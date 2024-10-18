@@ -1,0 +1,589 @@
+---
+title: "3' UTR Length Distribution - Gar"
+author: "Maria Vlachonikolou"
+output:
+  html_document:
+    df_print: paged
+---
+
+Exploring extended .gtf files. 
+
+ 
+Loading Libraries 
+```{r}
+library(rtracklayer)
+library(dplyr)
+library(ggplot2)
+library(ggridges)
+library(viridis)
+library(hrbrthemes)
+library(ggridges)
+```
+
+
+Converting .gtf annotation file to a data frame
+```{r}
+my_obj <- import("~/share/MVlachonikolou/Spotted-Gar/GCF_000242695.1_LepOcu1_genomic.gtf")
+class(my_obj)
+df<-data.frame(my_obj)
+```
+
+Exclusion of unmapped scaffolds and the mitochondrial chromosome. 
+```{r}
+#df_chrom<-df[grepl("^NC", df$seqnames),]
+#df_chrom<-subset(df_chrom, seqnames!="NC_004744.1")
+```
+
+
+Separating by strand. Selecting the transcript and stop codon coordinates and saving them to new dataframes. 
+```{r}
+# rev
+df_rev<-df[grep("\\-", df$strand),]
+
+df_transcript_rev<-df_rev[grepl("transcript", df_rev$type),]
+
+df_stop_rev<-df_rev[grepl("stop_codon", df_rev$type),]
+
+```
+
+
+```{r}
+# for
+df_for<-df[grep("\\+", df$strand),]
+
+df_transcript_for<-df_for[grepl("transcript", df_for$type),]
+
+df_stop_for<-df_for[grepl("stop_codon", df_for$type),]
+
+```
+
+Merging the transcript data frame with the stop codon coordinates based on the transcript_id column. Keeping only the relevant information. 
+In the .gtf annotation there is a common coordinate system for both forward and reverse strand. For the reverse strand the "start" is the 3' end and the "end" the 5' end, which might be counter-intuitive.  
+```{r}
+df_trnscrpt_stop_rev<-merge(df_stop_rev, df_transcript_rev[ ,c("transcript_id","start", "end", "width")], by="transcript_id", all=FALSE, suffixes = c("_ORF", "_transcript"))
+df_trnscrpt_stop_rev<-df_trnscrpt_stop_rev[ ,c("transcript_id", "seqnames", "end_ORF", "start_transcript", "gene_id", "strand", "width_transcript")]
+
+
+df_trnscrpt_stop_for<-merge(df_stop_for, df_transcript_for[ ,c("transcript_id", "end", "width")], by="transcript_id", all=FALSE, suffixes = c("_ORF", "_transcript"))
+df_trnscrpt_stop_for<-df_trnscrpt_stop_for[ ,c("transcript_id", "seqnames", "end_ORF", "end_transcript", "gene_id", "strand", "width_transcript")]
+```
+
+
+Calculating the 3' UTR length as the distance between the end of the stop codon and the end of the transcript.
+Many transcripts are mapped to the same Loci because of alternative splicing. We are selecting here the transcript with the longest 3' UTR. 
+
+```{r}
+df_trnscrpt_stop_rev$UTR<--1*(df_trnscrpt_stop_rev$start_transcript-df_trnscrpt_stop_rev$end_ORF+2)
+names(df_trnscrpt_stop_rev)[names(df_trnscrpt_stop_rev)=="start_transcript"]<-"end_transcript"
+
+
+df_trnscrpt_stop_rev_unique <- df_trnscrpt_stop_rev %>%
+  group_by(gene_id) %>%
+  arrange(desc(UTR)) %>%
+  filter(row_number() == 1) %>%
+  ungroup()
+
+df_trnscrpt_stop_for$UTR<-df_trnscrpt_stop_for$end_transcript-df_trnscrpt_stop_for$end_ORF
+
+df_trnscrpt_stop_for_unique <- df_trnscrpt_stop_for %>%
+  group_by(gene_id) %>%
+  arrange(desc(UTR)) %>%
+  filter(row_number() == 1) %>%
+  ungroup()
+
+df_trnscrpt_stop<-rbind(df_trnscrpt_stop_for, df_trnscrpt_stop_rev)
+```
+
+
+
+```{r}
+# unique loci only 
+
+df_trnscrpt_stop_unique <- rbind(df_trnscrpt_stop_for_unique, df_trnscrpt_stop_rev_unique)
+
+```
+
+Plotting the data. 
+```{r, fig.width=15, fig.height=9}
+p3 <- ggplot(df_trnscrpt_stop_unique, aes(x=UTR)) +
+  geom_histogram(bins=50, fill="#F25022", color="#e9ecef", alpha=0.78, boundary = 0) +
+  xlab("3' UTR Length (nt)") +
+  geom_vline(aes(xintercept=median(df_trnscrpt_stop_unique$UTR)), colour="#3489eb") +
+  xlim(0, 8000) +
+  theme(
+    plot.title = element_text(size=15)
+  ) +
+  scale_x_continuous(trans='log10')
+
+print(p3)
+
+pdf("~/share/MVlachonikolou/r_scripts_refined/output_plots/Spotted_Gar_UTR_unique.pdf", 
+  width     = 3.5,
+  height    = 2.5)
+print(p3)
+dev.off()
+```
+
+```{r}
+median(df_trnscrpt_stop_unique$UTR)
+
+df_trnscrpt_stop_unique$w_i_ratio<-df_trnscrpt_stop_unique$UTR/df_trnscrpt_stop_unique$width_transcript
+
+```
+
+
+```{r}
+p5<- ggplot(df_trnscrpt_stop_unique, aes(x=UTR, y=width_transcript)) + 
+    geom_point()+
+  xlim(0, 5000)
+
+png("~/share/MVlachonikolou/r_scripts/output_plots/Spotted_Gar_widthvsUTR.png", 
+  width     = 8.25,
+  height    = 5,
+  units     = "in",
+  res       = 1200,
+  pointsize = 4)
+print(p5)
+dev.off()
+```
+
+
+median length of gene 3,273 bp 
+
+
+
+
+
+Statistics. 
+```{r}
+meanutr<-mean(df_trnscrpt_stop_unique$UTR)
+medianutr<-median(df_trnscrpt_stop_unique$UTR)
+
+
+
+print(meanutr)
+print(medianutr)
+
+
+
+max(df_trnscrpt_stop_unique$UTR)
+
+sum(df_trnscrpt_stop_unique$UTR==0)
+
+sum(df_trnscrpt_stop_unique$UTR==0)/sum(df_trnscrpt_stop_unique$UTR)
+
+
+```
+
+
+```{r}
+counts_table <- table(df_trnscrpt_stop_unique$UTR)
+
+all_modes <- as.numeric(names(counts_table[counts_table == max(counts_table)]))
+
+print(all_modes)
+```
+
+697+678 end at the stop codon, most probably because there is no information about their 3' UTR available. 
+
+
+
+Looking into the GeneExt gtf output file. Repeat of the same process as with the NCBI raw .gtf file. 
+```{r}
+#setwd("/Users/achinos/Downloads/")
+my_obj_2500 <- import("~/share/MVlachonikolou/Spotted-Gar/GeneExtout/Gar547_geneext_result_mv2500_noorph.gtf")
+class(my_obj_2500)
+
+df_2500<-data.frame(my_obj_2500)
+
+#table(df$seqnames)
+```
+
+```{r}
+#df_chrom_2500<-df_2500[grepl("^NC", df_2500$seqnames),]
+#df_chrom_2500<-subset(df_chrom_2500, seqnames!="NC_001626.1")
+```
+
+
+The GeneExt .gtf output file does not contain annotations for the stop codon and only has unique transcripts. 
+```{r}
+# rev
+df_rev_2500<-df_2500[grep("\\-", df_2500$strand),]
+
+df_transcript_rev_2500<-df_rev_2500[grepl("gene", df_rev_2500$type),]
+
+#df_stop_rev_2500<-df_rev_2500[grepl("stop_codon", df_rev_2500$type),]
+
+```
+
+```{r}
+df_unique_rev_ext <- merge(df_trnscrpt_stop_rev_unique, df_transcript_rev_2500[, c("gene_id", "start", "three_prime_ext")], by = "gene_id", all = FALSE)
+
+
+df_unique_rev_ext$UTR_ext<--1*(df_unique_rev_ext$start-df_unique_rev_ext$end_ORF)
+names(df_unique_rev_ext)[names(df_unique_rev_ext)=="start"]<-"end_ext"
+
+
+```
+
+
+```{r}
+# for
+df_for_2500<-df_2500[grep("\\+", df_2500$strand),]
+
+df_transcript_for_2500<-df_for_2500[grepl("gene", df_for_2500$type),]
+
+#df_stop_for_2500<-df_for_2500[grepl("stop_codon", df_for_2500$type),]
+
+```
+
+```{r}
+df_unique_for_ext <- merge(df_trnscrpt_stop_for_unique, df_transcript_for_2500[, c("gene_id", "end", "three_prime_ext")], by = "gene_id", all = FALSE)
+
+
+df_unique_for_ext$UTR_ext<-df_unique_for_ext$end-df_unique_for_ext$end_ORF
+names(df_unique_for_ext)[names(df_unique_for_ext)=="end"]<-"end_ext"
+
+
+```
+
+```{r}
+df_ext_utr<-rbind(df_unique_rev_ext, df_unique_for_ext)
+
+```
+
+```{r, fig.width=15, fig.height=9}
+p4<-ggplot(df_ext_utr, aes(x=UTR_ext))+
+  geom_histogram(bins=90, fill="#69b3a2", color="#e9ecef", alpha=0.98, boundary = 0) +
+    ggtitle("-m 2500 3' UTR Length Distribution - Spotted Gar") +
+    #geom_vline(aes(xintercept=2500), colour="black")+
+    xlim(0, 10000)+
+    #theme_ipsum() +
+    theme(
+      plot.title = element_text(size=15)
+    )
+
+print(p4)
+
+png("~/share/MVlachonikolou/r_scripts/output_plots/Spotted_Gar_UTR_2500.png", 
+  width     = 10.25,
+  height    = 6.25,
+  units     = "in",
+  res       = 1200,
+  pointsize = 4)
+print(p4)
+dev.off()
+
+```
+
+
+
+
+
+Looking into the GeneExt gtf output file. Repeat of the same process as with the NCBI raw .gtf file. 
+```{r}
+#setwd("/Users/achinos/Downloads/")
+my_obj_20000 <- import("~/share/MVlachonikolou/Spotted-Gar/GeneExtout/Gar547_geneext_result_mv20000_noorph.gtf")
+class(my_obj_20000)
+
+df_20000<-data.frame(my_obj_20000)
+
+#table(df$seqnames)
+```
+
+```{r}
+#df_chrom_20000<-df_20000[grepl("^NC", df_20000$seqnames),]
+#df_chrom_20000<-subset(df_chrom_20000, seqnames!="NC_001626.1")
+```
+
+
+The GeneExt .gtf output file does not contain anotations for the stop codon and only has unique transcripts. 
+```{r}
+# rev
+df_rev_20000<-df_20000[grep("\\-", df_20000$strand),]
+
+df_transcript_rev_20000<-df_rev_20000[grepl("gene", df_rev_20000$type),]
+
+#df_stop_rev_20000<-df_rev_20000[grepl("stop_codon", df_rev_20000$type),]
+
+```
+
+```{r}
+df_unique_rev_ext_20000 <- merge(df_trnscrpt_stop_rev_unique, df_transcript_rev_20000[, c("gene_id", "start", "three_prime_ext")], by = "gene_id", all = FALSE)
+
+
+df_unique_rev_ext_20000$UTR_ext<--1*(df_unique_rev_ext_20000$start-df_unique_rev_ext_20000$end_ORF)
+names(df_unique_rev_ext_20000)[names(df_unique_rev_ext_20000)=="start"]<-"end_ext"
+
+
+```
+
+
+```{r}
+# for
+df_for_20000<-df_20000[grep("\\+", df_20000$strand),]
+
+df_transcript_for_20000<-df_for_20000[grepl("gene", df_for_20000$type),]
+
+#df_stop_for_20000<-df_for_20000[grepl("stop_codon", df_for_20000$type),]
+
+```
+
+```{r}
+df_unique_for_ext_20000 <- merge(df_trnscrpt_stop_for_unique, df_transcript_for_20000[, c("gene_id", "end", "three_prime_ext")], by = "gene_id", all = FALSE)
+
+
+df_unique_for_ext_20000$UTR_ext<-df_unique_for_ext_20000$end-df_unique_for_ext_20000$end_ORF
+names(df_unique_for_ext_20000)[names(df_unique_for_ext_20000)=="end"]<-"end_ext"
+
+
+```
+
+```{r}
+df_ext_utr_20000<-rbind(df_unique_rev_ext_20000, df_unique_for_ext_20000)
+
+```
+
+```{r, fig.width=15, fig.height=9}
+p4<-ggplot(df_ext_utr_20000, aes(x=UTR_ext))+
+  geom_histogram(bins=90, fill="#69b3a2", color="#e9ecef", alpha=0.98, boundary = 0) +
+    ggtitle("-m 20000 3' UTR Length Distribution - Spotted Gar") +
+    #geom_vline(aes(xintercept=20000), colour="black")+
+    xlim(0, 30000)+
+    #theme_ipsum() +
+    theme(
+      plot.title = element_text(size=15)
+    )
+
+print(p4)
+
+png("~/share/MVlachonikolou/r_scripts/output_plots/Spotted_Gar_UTR_20000.png", 
+  width     = 10.25,
+  height    = 6.25,
+  units     = "in",
+  res       = 1200,
+  pointsize = 4)
+print(p4)
+dev.off()
+
+```
+
+
+
+
+```{r}
+#Merge everything to a df 
+df_trnscrpt_stop_unique$extension<-"Original"
+df_ext_utr$extension<-"2500"
+df_ext_utr_20000$extension<- "20000"
+
+colnames(df_trnscrpt_stop_unique)[colnames(df_trnscrpt_stop_unique) == "UTR"] <- "UTR_ext"
+
+
+all_utr<-rbind(df_trnscrpt_stop_unique[ , c("extension", "UTR_ext", "gene_id")], df_ext_utr[ , c("extension", "UTR_ext", "gene_id")], df_ext_utr_20000[ , c("extension", "UTR_ext", "gene_id")])
+
+all_utr$extension<-factor(all_utr$extension, levels=c("Original", "2500", "20000"))
+
+```
+
+```{r}
+
+p1 <- ggplot(data=all_utr, aes(x=(UTR_ext+1), group=extension, color=extension)) + 
+ 
+  # color property for changing color of plot
+  # geom_density() function plots the density plot
+  stat_density(geom = "line", position = "identity")+
+  scale_color_manual(values = c(
+    "Original" = "#D10000",  
+    "2500" = "#00C413", 
+    "20000" = "#0033D1"  
+    
+  )) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"))+
+  scale_x_continuous(trans='log10')+
+  xlab("3'UTR Length (nt)")
+
+print(p1)
+
+
+pdf("~/share/MVlachonikolou/r_scripts_refined//output_plots/Spotted_Gar_UTR_comparisons.pdf", 
+  width     = 3,
+  height    = 2.5)
+print(p1)
+dev.off()
+
+```
+
+
+
+
+
+
+
+
+
+
+Looking into the GeneExt gtf output file. Repeat of the same process as with the NCBI raw .gtf file. 
+```{r}
+#setwd("/Users/achinos/Downloads/")
+my_obj_5000 <- import("~/share/MVlachonikolou/Spotted-Gar/GeneExtout/Gar_geneext_result_mv5000.gtf")
+class(my_obj_5000)
+
+df_5000<-data.frame(my_obj_5000)
+
+#table(df$seqnames)
+#df_chrom_5000<-df_5000[grepl("^NC", df_5000$seqnames),]
+#df_chrom_5000<-subset(df_chrom_5000, seqnames!="NC_001626.1")
+
+# rev
+df_rev_5000<-df_5000[grep("\\-", df_5000$strand),]
+
+df_transcript_rev_5000<-df_rev_5000[grepl("gene", df_rev_5000$type),]
+
+#df_stop_rev_5000<-df_rev_5000[grepl("stop_codon", df_rev_5000$type),]
+
+
+df_unique_rev_ext_5000 <- merge(df_trnscrpt_stop_rev_unique, df_transcript_rev_5000[, c("gene_id", "start", "three_prime_ext")], by = "gene_id", all = FALSE)
+
+
+df_unique_rev_ext_5000$UTR_ext<--1*(df_unique_rev_ext_5000$start-df_unique_rev_ext_5000$end_ORF)
+names(df_unique_rev_ext_5000)[names(df_unique_rev_ext_5000)=="start"]<-"end_ext"
+
+
+# for
+df_for_5000<-df_5000[grep("\\+", df_5000$strand),]
+
+df_transcript_for_5000<-df_for_5000[grepl("gene", df_for_5000$type),]
+
+#df_stop_for_5000<-df_for_5000[grepl("stop_codon", df_for_5000$type),]
+
+
+df_unique_for_ext_5000 <- merge(df_trnscrpt_stop_for_unique, df_transcript_for_5000[, c("gene_id", "end", "three_prime_ext")], by = "gene_id", all = FALSE)
+
+
+df_unique_for_ext_5000$UTR_ext<-df_unique_for_ext_5000$end-df_unique_for_ext_5000$end_ORF
+names(df_unique_for_ext_5000)[names(df_unique_for_ext_5000)=="end"]<-"end_ext"
+
+
+
+df_ext_utr_5000<-rbind(df_unique_rev_ext_5000, df_unique_for_ext_5000)
+
+
+df_ext_utr_5000$extension<- "5000"
+
+all_utr<-rbind(all_utr, df_ext_utr_5000[ , c("extension", "UTR_ext", "gene_id")])
+
+all_utr$extension<-factor(all_utr$extension, levels=c("Original", "2500", "5000", "20000"))
+```
+ 
+ 
+```{r}
+#setwd("/Users/achinos/Downloads/")
+my_obj_10000 <- import("~/share/MVlachonikolou/Spotted-Gar/GeneExtout/Gar547_geneext_result_mv10000_noorph.gtf")
+class(my_obj_10000)
+
+df_10000<-data.frame(my_obj_10000)
+
+#table(df$seqnames)
+#df_chrom_10000<-df_10000[grepl("^NC", df_10000$seqnames),]
+#df_chrom_10000<-subset(df_chrom_10000, seqnames!="NC_001626.1")
+
+# rev
+df_rev_10000<-df_10000[grep("\\-", df_10000$strand),]
+
+df_transcript_rev_10000<-df_rev_10000[grepl("gene", df_rev_10000$type),]
+
+#df_stop_rev_10000<-df_rev_10000[grepl("stop_codon", df_rev_10000$type),]
+
+
+df_unique_rev_ext_10000 <- merge(df_trnscrpt_stop_rev_unique, df_transcript_rev_10000[, c("gene_id", "start", "three_prime_ext")], by = "gene_id", all = FALSE)
+
+
+df_unique_rev_ext_10000$UTR_ext<--1*(df_unique_rev_ext_10000$start-df_unique_rev_ext_10000$end_ORF)
+names(df_unique_rev_ext_10000)[names(df_unique_rev_ext_10000)=="start"]<-"end_ext"
+
+
+# for
+df_for_10000<-df_10000[grep("\\+", df_10000$strand),]
+
+df_transcript_for_10000<-df_for_10000[grepl("gene", df_for_10000$type),]
+
+#df_stop_for_10000<-df_for_10000[grepl("stop_codon", df_for_10000$type),]
+
+
+df_unique_for_ext_10000 <- merge(df_trnscrpt_stop_for_unique, df_transcript_for_10000[, c("gene_id", "end", "three_prime_ext")], by = "gene_id", all = FALSE)
+
+
+df_unique_for_ext_10000$UTR_ext<-df_unique_for_ext_10000$end-df_unique_for_ext_10000$end_ORF
+names(df_unique_for_ext_10000)[names(df_unique_for_ext_10000)=="end"]<-"end_ext"
+
+
+
+df_ext_utr_10000<-rbind(df_unique_rev_ext_10000, df_unique_for_ext_10000)
+
+
+df_ext_utr_10000$extension<- "10000"
+
+all_utr<-rbind(all_utr, df_ext_utr_10000[ , c("extension", "UTR_ext", "gene_id")])
+
+all_utr$extension<-factor(all_utr$extension, levels=c("Original", "2500", "5000", "10000", "20000"))
+```
+ 
+
+
+
+```{r}
+p2 <- ggplot(data=all_utr, aes(x=(UTR_ext+1), group=extension, color=extension)) + 
+ 
+  # color property for changing color of plot
+  # geom_density() function plots the density plot
+  stat_density(geom = "line", position = "identity")+
+  scale_color_manual(values = c(
+  "Original" = "#B22222",  # Firebrick Red
+  "2500" = "#FF4500",      # Orange-Red
+  "5000" = "#FF8C00",      # Dark Orange
+  "10000" = "#FFD700",     # Gold
+  "20000" = "#DAA520"      # Goldenrod (darker yellow)
+))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"))+
+  scale_x_continuous(trans='log10')+
+  xlab("3'UTR Length (nt)")
+
+print(p2)
+
+
+pdf("~/share/MVlachonikolou/r_scripts_refined/output_plots/Spotted_Gar_UTR_all_comparisons.pdf", 
+  width     = 4.5,
+  height    = 2.2)
+print(p2)
+dev.off()
+
+```
+
+How many genes are extended per condition? 
+
+```{r}
+# Calculate the sums
+sum_2500 <- sum(df_2500$type == "transcript" & df_2500$source == "GeneExt")
+sum_5000 <- sum(df_5000$type == "transcript" & df_5000$source == "GeneExt")
+sum_10000 <- sum(df_10000$type == "transcript" & df_10000$source == "GeneExt")
+sum_20000 <- sum(df_20000$type == "transcript" & df_20000$source == "GeneExt")
+
+# Create a dataframe
+sums_df <- data.frame(
+  Dataset = c("2500", "5000", "10000", "20000"),
+  Transcript_GeneExt_Count = c(sum_2500, sum_5000, sum_10000, sum_20000)
+)
+
+# Print the dataframe
+print(sums_df)
+
+```
+
+
+```{r}
+sessionInfo()
+```
+

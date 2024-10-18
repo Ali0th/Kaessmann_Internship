@@ -1,0 +1,504 @@
+---
+title: "3'UTR Length Distribution Comparisons"
+author: "Maria Vlachonikolou"
+date: "`r Sys.Date()`"
+output:
+    pdf_document: default
+---
+
+
+ 
+Loading Libraries 
+```{r}
+library(rtracklayer)
+library(dplyr)
+library(ggplot2)
+library(ggridges)
+library(viridis)
+library(hrbrthemes)
+library(ggridges)
+```
+
+
+Converting .gtf annotation file to a data frame
+```{r}
+my_obj <- import("~/share/MVlachonikolou/Spotted-Gar/GCF_000242695.1_LepOcu1_genomic.gtf")
+class(my_obj)
+df<-data.frame(my_obj)
+```
+
+Exclusion of unmapped scaffolds and the mitochondrial chromosome. 
+```{r}
+#df_chrom<-df[grepl("^NC", df$seqnames),]
+#df_chrom<-subset(df, seqnames!="NC_004744.1")
+```
+
+
+Separating by strand. Selecting the transcript and stop codon coordinates and saving them to new dataframes. 
+```{r}
+# rev
+df_rev<-df[grep("\\-", df$strand),]
+
+df_transcript_rev<-df_rev[grepl("transcript", df_rev$type),]
+
+df_stop_rev<-df_rev[grepl("stop_codon", df_rev$type),]
+
+```
+
+
+```{r}
+# for
+df_for<-df[grep("\\+", df$strand),]
+
+df_transcript_for<-df_for[grepl("transcript", df_for$type),]
+
+df_stop_for<-df_for[grepl("stop_codon", df_for$type),]
+
+```
+
+Merging the transcript data frame with the stop codon coordinates based on the transcript_id column. Keeping only the relevant information. 
+In the .gtf annotation there is a common coordinate system for both forward and reverse strand. For the reverse strand the "start" is the 3' end and the "end" the 5' end, which might be counter-intuitive.  
+```{r}
+df_trnscrpt_stop_rev<-merge(df_stop_rev, df_transcript_rev[ ,c("transcript_id","start", "end", "width")], by="transcript_id", all=FALSE, suffixes = c("_ORF", "_transcript"))
+df_trnscrpt_stop_rev<-df_trnscrpt_stop_rev[ ,c("transcript_id", "seqnames", "end_ORF", "start_transcript", "gene_id", "strand", "width_transcript")]
+
+
+df_trnscrpt_stop_for<-merge(df_stop_for, df_transcript_for[ ,c("transcript_id", "end", "width")], by="transcript_id", all=FALSE, suffixes = c("_ORF", "_transcript"))
+df_trnscrpt_stop_for<-df_trnscrpt_stop_for[ ,c("transcript_id", "seqnames", "end_ORF", "end_transcript", "gene_id", "strand", "width_transcript")]
+```
+
+
+Calculating the 3' UTR length as the distance between the end of the stop codon and the end of the transcript.
+Many transcripts are mapped to the same Loci because of alternative splicing. We are selecting here the transcript with the longest 3' UTR. 
+
+```{r}
+df_trnscrpt_stop_rev$UTR<--1*(df_trnscrpt_stop_rev$start_transcript-df_trnscrpt_stop_rev$end_ORF+2)
+names(df_trnscrpt_stop_rev)[names(df_trnscrpt_stop_rev)=="start_transcript"]<-"end_transcript"
+
+
+df_trnscrpt_stop_rev_unique <- df_trnscrpt_stop_rev %>%
+  group_by(gene_id) %>%
+  arrange(desc(UTR)) %>%
+  filter(row_number() == 1) %>%
+  ungroup()
+
+df_trnscrpt_stop_for$UTR<-df_trnscrpt_stop_for$end_transcript-df_trnscrpt_stop_for$end_ORF
+
+df_trnscrpt_stop_for_unique <- df_trnscrpt_stop_for %>%
+  group_by(gene_id) %>%
+  arrange(desc(UTR)) %>%
+  filter(row_number() == 1) %>%
+  ungroup()
+
+df_trnscrpt_stop<-rbind(df_trnscrpt_stop_for, df_trnscrpt_stop_rev)
+
+```
+
+
+```{r}
+# unique loci only 
+df_trnscrpt_stop_unique <- rbind(df_trnscrpt_stop_for_unique, df_trnscrpt_stop_rev_unique)
+```
+
+
+Plotting the data. 
+```{r, fig.width=15, fig.height=9}
+p3<-ggplot(df_trnscrpt_stop_unique, aes(x=UTR))+
+  geom_histogram(bins=65, fill="#F25022", color="#e9ecef", alpha=0.78, boundary = 0) +
+    ggtitle("3' UTR Length Distribution - Spotted Gar") +
+    geom_vline(aes(xintercept=median(df_trnscrpt_stop_unique$UTR)), colour="#3489eb")+
+    xlim(0, 10000)+
+    #theme_ipsum() +
+    theme(
+      plot.title = element_text(size=15)
+    )
+
+print(p3)
+
+png("~/share/MVlachonikolou/r_scripts_refined/output_plots/Spotted_Gar_UTR_unique.png", 
+  width     = 6.25,
+  height    = 3.25,
+  units     = "in",
+  res       = 1000,
+  pointsize = 4)
+print(p3)
+dev.off()
+```
+
+
+```{r, fig.width=15, fig.height=9}
+p5<-ggplot(df_trnscrpt_stop, aes(x=UTR))+
+  geom_histogram(bins=65, fill="#F25022", color="#e9ecef", alpha=0.78, boundary = 0) +
+    ggtitle("3' UTR Length Distribution - Spotted Gar") +
+    geom_vline(aes(xintercept=median(df_trnscrpt_stop$UTR)), colour="#3489eb")+
+    xlim(0, 10000)+
+    #theme_ipsum() +
+    theme(
+      plot.title = element_text(size=15)
+    )
+
+print(p5)
+
+png("~/share/MVlachonikolou/r_scripts_refined/output_plots/Spotted_Gar_UTR_all.png", 
+  width     = 6.25,
+  height    = 3.25,
+  units     = "in",
+  res       = 1000,
+  pointsize = 4)
+print(p5)
+dev.off()
+```
+
+Some statistics.
+```{r}
+median(df_trnscrpt_stop_unique$UTR)
+mean(df_trnscrpt_stop_unique$UTR)
+sum(df_trnscrpt_stop_unique$UTR>0)
+sum(df_trnscrpt_stop_unique$UTR==0)
+
+mean(df_trnscrpt_stop_unique$UTR[df_trnscrpt_stop_unique$UTR > 0])
+max(df_trnscrpt_stop_unique$UTR)
+```
+
+
+
+
+
+
+
+```{r}
+zebra_obj <- import("~/share/MVlachonikolou/GCF_000002035.6_GRCz11_genomic.gtf")
+class(zebra_obj)
+zebra_df<-data.frame(zebra_obj)
+```
+
+
+
+Separating by strand. Selecting the transcript and stop codon coordinates and saving them to new dataframes. 
+```{r}
+# rev
+df_zrev<-zebra_df[grep("\\-", zebra_df$strand),]
+
+df_zexon_rev<-df_zrev[grepl("exon", df_zrev$type),]
+
+df_zstop_rev<-df_zrev[grepl("stop_codon", df_zrev$type),]
+
+```
+
+
+```{r}
+# for
+df_zfor<-zebra_df[grep("\\+", zebra_df$strand),]
+
+df_zexon_for<-df_zfor[grepl("exon", df_zfor$type),]
+
+df_zstop_for<-df_zfor[grepl("stop_codon", df_zfor$type),]
+```
+
+
+
+
+Merging the transcript data frame with the stop codon coordinates based on the transcript_id column. Keeping only the relevant information. 
+In the .gtf annotation there is a common coordinate system for both forward and reverse strand. For the reverse strand the "start" is the 3' end and the "end" the 5' end, which might be counter-intuitive.  
+
+
+```{r}
+#Many exons for each transcript_id. Keep the last one. 
+df_zexon_for <- df_zexon_for %>%
+  group_by(transcript_id) %>%
+  arrange(desc(end)) %>%
+  filter(row_number() == 1) %>%
+  ungroup()
+
+
+df_zexon_rev <- df_zexon_rev %>%
+  group_by(transcript_id) %>%
+  arrange(start) %>%
+  filter(row_number() == 1) %>%
+  ungroup()
+
+```
+
+```{r}
+df_ztranscript_stop_rev<-merge(df_zstop_rev, df_zexon_rev[ ,c("transcript_id","start")], by="transcript_id", all=FALSE, suffixes = c("_ORF", "_transcript"))
+df_ztranscript_stop_rev<-df_ztranscript_stop_rev[ ,c("transcript_id", "seqnames", "start_ORF", "start_transcript", "gene_id", "strand")]
+
+
+df_ztranscript_stop_for<-merge(df_zstop_for, df_zexon_for[ ,c("transcript_id", "end")], by="transcript_id", all=FALSE, suffixes = c("_ORF", "_transcript"))
+df_ztranscript_stop_for<-df_ztranscript_stop_for[ ,c("transcript_id", "seqnames", "end_ORF", "end_transcript", "gene_id", "strand")]
+```
+
+
+Calculating the 3' UTR length as the distance between the end of the stop codon and the end of the transcript.
+Many transcripts are mapped to the same Loci because of alternative splicing. We are selecting here the transcript with the longest 3' UTR. 
+
+```{r}
+df_ztranscript_stop_rev$UTR<--1*(df_ztranscript_stop_rev$start_transcript-df_ztranscript_stop_rev$start_ORF)
+names(df_ztranscript_stop_rev)[names(df_ztranscript_stop_rev)=="start_transcript"]<-"end_transcript"
+names(df_ztranscript_stop_rev)[names(df_ztranscript_stop_rev)=="start_ORF"]<-"end_ORF"
+
+
+df_ztranscript_stop_rev_unique <- df_ztranscript_stop_rev %>%
+  group_by(gene_id) %>%
+  arrange(desc(UTR)) %>%
+  filter(row_number() == 1) %>%
+  ungroup()
+
+df_ztranscript_stop_for$UTR<-df_ztranscript_stop_for$end_transcript-df_ztranscript_stop_for$end_ORF
+
+df_ztranscript_stop_for_unique <- df_ztranscript_stop_for %>%
+  group_by(gene_id) %>%
+  arrange(desc(UTR)) %>%
+  filter(row_number() == 1) %>%
+  ungroup()
+
+df_ztranscript_stop<-rbind(df_ztranscript_stop_for, df_ztranscript_stop_rev)
+
+```
+
+
+
+```{r}
+# unique loci only 
+
+df_ztranscript_stop_unique <- rbind(df_ztranscript_stop_for_unique, df_ztranscript_stop_rev_unique)
+
+```
+
+
+
+Plotting the data. 
+```{r, fig.width=15, fig.height=9}
+p4<-ggplot(df_ztranscript_stop_unique, aes(x=UTR))+
+  geom_histogram(bins=65, fill="#F25022", color="#e9ecef", alpha=0.78, boundary = 0) +
+    ggtitle("3' UTR Length Distribution - Zebrafish") +
+    geom_vline(aes(xintercept=median(df_ztranscript_stop_unique$UTR)), colour="#3489eb")+
+    xlim(0, 10000)+
+    #theme_ipsum() +
+    theme(
+      plot.title = element_text(size=15)
+    )
+
+print(p4)
+```
+
+
+Some statistics.
+```{r}
+median(df_ztranscript_stop_unique$UTR)
+mean(df_ztranscript_stop_unique$UTR)
+sum(df_ztranscript_stop_unique$UTR>0)
+sum(df_ztranscript_stop_unique$UTR==0)
+
+mean(df_ztranscript_stop_unique$UTR[df_ztranscript_stop_unique$UTR > 0])
+
+
+max(df_ztranscript_stop_unique$UTR)
+
+```
+
+
+
+
+
+
+
+
+```{r}
+mouse_obj <- import("~/share/MVlachonikolou/gencode.vM34.annotation.gtf")
+class(mouse_obj)
+df_mouse<-data.frame(mouse_obj)
+```
+
+
+```{r}
+# rev
+df_mrev<-df_mouse[grep("\\-", df_mouse$strand),]
+
+df_mtranscript_rev<-df_mrev[grepl("transcript", df_mrev$type),]
+
+df_mstop_rev<-df_mrev[grepl("stop_codon", df_mrev$type),]
+
+```
+
+
+```{r}
+# for
+df_mfor<-df_mouse[grep("\\+", df_mouse$strand),]
+
+df_mtranscript_for<-df_mfor[grepl("transcript", df_mfor$type),]
+
+df_mstop_for<-df_mfor[grepl("stop_codon", df_mfor$type),]
+
+```
+
+Merging the transcript data frame with the stop codon coordinates based on the transcript_id column. Keeping only the relevant information. 
+In the .gtf annotation there is a common coordinate system for both forward and reverse strand. For the reverse strand the "start" is the 3' end and the "end" the 5' end, which might be counter-intuitive.  
+```{r}
+df_mtranscript_stop_rev<-merge(df_mstop_rev, df_mtranscript_rev[ ,c("transcript_id","start", "end", "width")], by="transcript_id", all=FALSE, suffixes = c("_ORF", "_transcript"))
+df_mtranscript_stop_rev<-df_mtranscript_stop_rev[ ,c("transcript_id", "seqnames", "end_ORF", "start_transcript", "gene_id", "strand", "width_transcript")]
+
+
+df_mtranscript_stop_for<-merge(df_mstop_for, df_mtranscript_for[ ,c("transcript_id", "end", "width")], by="transcript_id", all=FALSE, suffixes = c("_ORF", "_transcript"))
+df_mtranscript_stop_for<-df_mtranscript_stop_for[ ,c("transcript_id", "seqnames", "end_ORF", "end_transcript", "gene_id", "strand", "width_transcript")]
+```
+
+
+Calculating the 3' UTR length as the distance between the end of the stop codon and the end of the transcript.
+Many transcripts are mapped to the same Loci because of alternative splicing. We are selecting here the transcript with the longest 3' UTR. 
+
+```{r}
+df_mtranscript_stop_rev$UTR<--1*(df_mtranscript_stop_rev$start_transcript-df_mtranscript_stop_rev$end_ORF+2)
+names(df_mtranscript_stop_rev)[names(df_mtranscript_stop_rev)=="start_transcript"]<-"end_transcript"
+
+
+df_mtranscript_stop_rev_unique <- df_mtranscript_stop_rev %>%
+  group_by(gene_id) %>%
+  arrange(desc(UTR)) %>%
+  filter(row_number() == 1) %>%
+  ungroup()
+
+df_mtranscript_stop_for$UTR<-df_mtranscript_stop_for$end_transcript-df_mtranscript_stop_for$end_ORF
+
+df_mtranscript_stop_for_unique <- df_mtranscript_stop_for %>%
+  group_by(gene_id) %>%
+  arrange(desc(UTR)) %>%
+  filter(row_number() == 1) %>%
+  ungroup()
+
+df_mtranscript_stop<-rbind(df_mtranscript_stop_for, df_mtranscript_stop_rev)
+
+```
+
+
+
+```{r}
+# unique loci only 
+
+df_mtranscript_stop_unique <- rbind(df_mtranscript_stop_for_unique, df_mtranscript_stop_rev_unique)
+
+
+```
+
+
+
+Plotting the data. 
+```{r, fig.width=15, fig.height=9}
+p4<-ggplot(df_mtranscript_stop_unique, aes(x=UTR))+
+  geom_histogram(bins=65, fill="#F25022", color="#e9ecef", alpha=0.78, boundary = 0) +
+    ggtitle("3' UTR Length Distribution - Mouse") +
+    geom_vline(aes(xintercept=median(df_mtranscript_stop_unique$UTR)), colour="#3489eb")+
+    xlim(0, 10000)+
+    #theme_ipsum() +
+    theme(
+      plot.title = element_text(size=15)
+    )
+
+print(p4)
+```
+Some statistics.
+```{r}
+median(df_mtranscript_stop_unique$UTR)
+mean(df_mtranscript_stop_unique$UTR)
+sum(df_mtranscript_stop_unique$UTR>0)
+sum(df_mtranscript_stop_unique$UTR==0)
+
+mean(df_mtranscript_stop_unique$UTR[df_mtranscript_stop_unique$UTR > 0])
+
+
+max(df_mtranscript_stop_unique$UTR)
+
+```
+
+
+
+
+
+
+
+
+
+
+Merge everything
+```{r}
+#Merge everything to a df 
+df_mtranscript_stop_unique$species<-"Mouse"
+df_trnscrpt_stop_unique$species<-"Spotted Gar"
+df_ztranscript_stop_unique$species<- "Zebrafish"
+
+all_utr<-rbind(df_mtranscript_stop_unique[ , c("species", "UTR", "gene_id")], df_trnscrpt_stop_unique[ , c("species", "UTR", "gene_id")], df_ztranscript_stop_unique[ , c("species", "UTR", "gene_id")])
+
+
+#Merge everything to a df 
+df_mtranscript_stop$species<-"Mouse"
+df_trnscrpt_stop$species<-"Spotted Gar"
+df_ztranscript_stop$species<- "Zebrafish"
+
+all_all_utr<-rbind(df_mtranscript_stop[ , c("species", "UTR", "gene_id")], df_trnscrpt_stop[ , c("species", "UTR", "gene_id")], df_ztranscript_stop[ , c("species", "UTR", "gene_id")])
+```
+
+
+Plot
+```{r}
+p6 <- ggplot(all_utr, aes(x=UTR, color=species)) + 
+ 
+  # color property for changing color of plot
+  # geom_density() function plots the density plot
+  stat_density(geom = "line", position = "identity")+
+  scale_color_manual(values = c(
+    "Mouse" = "#D10000",  
+    "Spotted Gar" = "#00C413", 
+    "Zebrafish" = "#0033D1"  
+    
+  )) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"))+
+  scale_x_continuous(trans='log10')+
+  xlab("3'UTR Length (nt)")
+ print (p6)
+
+pdf("~/share/MVlachonikolou/r_scripts_refined/output_plots/Species_Log10UTR_comparison.pdf", 
+  width     = 4,
+  height    = 2.2,
+  pointsize = 6)
+print(p6)
+dev.off()
+```
+
+
+
+
+```{r, fig.height=5, fig.width=8}
+p0<-ggplot(data=all_utr, aes(x=UTR, group=species, fill=species)) +
+    geom_density(adjust=1.5, alpha=.4) +
+    xlim(0, 10000)
+
+print(p0)
+
+png("~/share/MVlachonikolou/r_scripts_refined/output_plots/Species_UTR_comparison.png", 
+  width     = 8.25,
+  height    = 4.5,
+  units     = "in",
+  res       = 1000,
+  pointsize = 6)
+print(p0)
+dev.off()
+
+```
+
+```{r}
+p1<-ggplot(data=all_all_utr, aes(x=UTR, group=species, fill=species)) +
+    geom_density(adjust=1.5, alpha=.4) +
+    xlim(0, 10000)
+print(p1)
+png("~/share/MVlachonikolou/r_scripts_refined/output_plots/Species_allUTR_comparison.png", 
+  width     = 8.25,
+  height    = 4.5,
+  units     = "in",
+  res       = 1000,
+  pointsize = 8)
+print(p1)
+dev.off()
+```
+
+

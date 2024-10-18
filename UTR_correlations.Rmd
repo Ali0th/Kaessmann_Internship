@@ -1,0 +1,331 @@
+---
+title: "3' UTR Correlations"
+author: "Maria Vlachonikolou"
+output:
+  html_document:
+    df_print: paged
+---
+
+
+```{r Clear environment,  echo=FALSE, results=FALSE}
+
+#clear the environment
+rm(list = ls())
+gc()
+```
+
+ 
+Loading Libraries 
+```{r}
+library(rtracklayer)
+library(dplyr)
+library(ggplot2)
+library(ggridges)
+library(viridis)
+library(hrbrthemes)
+library(ggridges)
+library(Seurat)
+library(stringr)
+```
+
+
+Converting .gtf annotation file to a data frame
+```{r}
+my_obj <- import("~/share/MVlachonikolou/Spotted-Gar/GCF_000242695.1_LepOcu1_genomic.gtf")
+class(my_obj)
+df<-data.frame(my_obj)
+```
+
+
+
+
+Separating by strand. Selecting the transcript and stop codon coordinates and saving them to new dataframes. 
+```{r}
+# rev
+df_rev<-df[grep("\\-", df$strand),]
+
+df_transcript_rev<-df_rev[grepl("transcript", df_rev$type),]
+
+df_stop_rev<-df_rev[grepl("stop_codon", df_rev$type),]
+
+# for
+df_for<-df[grep("\\+", df$strand),]
+
+df_transcript_for<-df_for[grepl("transcript", df_for$type),]
+
+df_stop_for<-df_for[grepl("stop_codon", df_for$type),]
+
+```
+
+Merging the transcript data frame with the stop codon coordinates based on the transcript_id column. Keeping only the relevant information. 
+In the .gtf annotation there is a common coordinate system for both forward and reverse strand. For the reverse strand the "start" is the 3' end and the "end" the 5' end, which might be counter-intuitive.  
+```{r}
+df_trnscrpt_stop_rev<-merge(df_stop_rev, df_transcript_rev[ ,c("transcript_id","start", "end", "width")], by="transcript_id", all=FALSE, suffixes = c("_ORF", "_transcript"))
+df_trnscrpt_stop_rev<-df_trnscrpt_stop_rev[ ,c("transcript_id", "seqnames", "end_ORF", "start_transcript", "gene_id", "strand", "width_transcript")]
+
+
+df_trnscrpt_stop_for<-merge(df_stop_for, df_transcript_for[ ,c("transcript_id", "end", "width")], by="transcript_id", all=FALSE, suffixes = c("_ORF", "_transcript"))
+df_trnscrpt_stop_for<-df_trnscrpt_stop_for[ ,c("transcript_id", "seqnames", "end_ORF", "end_transcript", "gene_id", "strand", "width_transcript")]
+```
+
+
+Calculating the 3' UTR length as the distance between the end of the stop codon and the end of the transcript.
+Many transcripts are mapped to the same Loci because of alternative splicing. We are selecting here the transcript with the longest ORF and by extend the shortest 3' UTR. 
+
+```{r}
+df_trnscrpt_stop_rev$UTR<--1*(df_trnscrpt_stop_rev$start_transcript-df_trnscrpt_stop_rev$end_ORF+2)
+names(df_trnscrpt_stop_rev)[names(df_trnscrpt_stop_rev)=="start_transcript"]<-"end_transcript"
+
+df_trnscrpt_stop_for$UTR<-df_trnscrpt_stop_for$end_transcript-df_trnscrpt_stop_for$end_ORF
+
+
+df_trnscrpt_stop<-rbind(df_trnscrpt_stop_for, df_trnscrpt_stop_rev)
+
+# unique loci only 
+df_trnscrpt_stop_unique <- df_trnscrpt_stop %>%
+  group_by(gene_id) %>%
+  arrange(desc(UTR)) %>%
+  filter(row_number() == 1) %>%
+  ungroup()
+
+
+#rm(df_trnscrpt_stop_for, df_trnscrpt_stop_rev, df_rev, df_for, df, df_transcript_for, df_transcript_rev, df_stop_for, df_stop_rev, df_trnscrpt_stop)
+```
+
+Plotting the data. 
+```{r, fig.width=15, fig.height=9}
+p0<-ggplot(df_trnscrpt_stop_unique, aes(x=UTR))+
+  geom_histogram(bins=90, fill="#F25022", color="#e9ecef", alpha=0.78, boundary = 0) +
+    ggtitle("3' UTR Length Distribution - Spotted Gar") +
+    geom_vline(aes(xintercept=median(df_trnscrpt_stop_unique$UTR)), colour="#3489eb")+
+    xlim(0, 10000)+
+    #theme_ipsum() +
+    theme(
+      plot.title = element_text(size=15)
+    )
+
+print(p0)
+
+```
+
+```{r}
+df_trnscrpt_stop_unique$w_i_ratio<-df_trnscrpt_stop_unique$UTR/df_trnscrpt_stop_unique$width_transcript
+```
+
+```{r}
+# GET EQUATION AND R-SQUARED AS STRING
+# SOURCE: https://groups.google.com/forum/#!topic/ggplot2/1TgH-kG5XMA
+
+lm_eqn <- function(df){
+    m <- lm(y ~ x, df);
+    eq <- substitute(italic(y) == a + b %.% italic(x)*","~~italic(r)^2~"="~r2, 
+         list(a = format(unname(coef(m)[1]), digits = 2),
+              b = format(unname(coef(m)[2]), digits = 2),
+             r2 = format(summary(m)$r.squared, digits = 3)))
+    as.character(as.expression(eq));
+}
+```
+
+
+```{r}
+# Fit a linear model
+fit_linear <- lm(width_transcript ~ UTR, data = df_trnscrpt_stop_unique)
+
+# Plot with a linear trend line
+p1 <- ggplot(df_trnscrpt_stop_unique, aes(x = UTR, y = width_transcript)) + 
+  geom_point() +
+  xlim(0, 50000) +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "blue") +
+  # Display only R-squared value
+  annotate("text", x = 25000, y = max(df_trnscrpt_stop_unique$width_transcript) * 0.9, 
+           label = paste("R^2 =", round(summary(fit_linear)$r.squared, 3)), 
+           color = "red") +
+  labs(x = "3'UTR Length (nt)", y = "Transcript Width (nt)")+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+p1
+
+
+print(p1)
+pdf("~/share/MVlachonikolou/Plots_for_140324_presentation/Mapping_rate.pdf", width = 4, height = 3)
+print(p1)
+dev.off()
+```
+
+
+
+
+---------
+UTR vs Counts per Feature
+---------
+
+Next we load in the raw data from the STARsolo mapping.
+```{r Define sample name and path}
+#Specify sample name, input and output paths
+star_inpath = "~/share/MVlachonikolou/Spotted-Gar/Gar547_ncbiSolo.out/"
+
+```
+
+# Data Loading
+
+Next we load in the raw data from the STARsolo mapping.
+```{r Read in raw count matrix}
+
+#Read in data
+#We can use the ReadMtx() function to use the cells and features parameters
+SNE_full <- ReadMtx(mtx = str_c(star_inpath,"GeneFull/raw/matrix.mtx"),
+                    cells = str_c(star_inpath,"GeneFull/raw/barcodes.tsv"),
+                    features = str_c(star_inpath,"GeneFull/raw/features.tsv"))
+
+```
+
+
+```{r Get Total counts per Feature}
+# Calculate the total counts per feature (gene)
+total_counts_per_feature <- rowSums(SNE_full)
+
+total_counts_df <- data.frame(Feature = rownames(SNE_full), Total_Counts = total_counts_per_feature)
+
+total_counts_df <-total_counts_df[order(total_counts_df$Total_Counts, decreasing = TRUE),]
+
+sum(total_counts_df$Total_Counts)
+
+
+#total_counts_df<- total_counts_df%>%
+#  filter( Total_Counts>0 )
+```
+
+
+```{r}
+names(total_counts_df)[names(total_counts_df)=="Feature"]<-"gene_id"
+utr_counts<-merge(df_trnscrpt_stop_unique, total_counts_df, by="gene_id", all=FALSE)
+```
+
+
+```{r}
+# Fit a linear model
+fit_linear2 <- lm(Total_Counts ~ UTR, data = utr_counts)
+
+# Plot with a linear trend line
+p2 <- ggplot(utr_counts, aes(x = UTR, y = Total_Counts)) + 
+  geom_point(size=0.5) +
+  ylim(0,200000)+
+  xlim(0, 50000)+
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "blue") +
+  annotate("text", x = 40000, y = 170000, 
+           label = paste("R^2 =", round(summary(fit_linear2)$r.squared, 3)), 
+           color = "red") +
+  labs(x = "3'UTR Length (nt)", y = "Counts")+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+print(p2)
+
+
+pdf("~/share/MVlachonikolou/r_scripts_refined/output_plots/Spotted_Gar_UTRvsCounts.pdf", 
+  width     = 4,
+  height    = 3)
+print(p2)
+dev.off()
+
+
+```
+
+
+```{r}
+p6<-ggplot(utr_counts, aes(x=width_transcript, y=Total_Counts)) + 
+  ylim(0,250000)+
+  geom_point(size = 0.5)+
+  stat_poly_line() +
+  stat_poly_eq() 
+  #theme_ipsum()
+print(p6)
+png("~/share/MVlachonikolou/r_scripts/output_plots/Width_vs_Counts.png", 
+  width     = 4.75,
+  height    = 3,
+  units     = "in",
+  res       = 1000,
+  pointsize = 4)
+print(p6)
+dev.off()
+```
+
+
+
+
+
+-------
+GeneExt 3' UTR Extension 
+-------
+
+
+
+
+Plot extension vs counts 
+
+```{r}
+#setwd("/Users/achinos/Downloads/")
+my_obj_ext <- import("~/share/MVlachonikolou/Spotted-Gar/GeneExtout/Gar547_geneext_result_mv20000_noorph.gtf")
+class(my_obj_ext)
+
+df_ext<-data.frame(my_obj_ext)
+
+#table(df$seqnames)
+```
+
+```{r}
+utr_counts<-merge(utr_counts, df_ext[ ,c("gene_id","three_prime_ext")], by="gene_id", all=FALSE)
+
+utr_counts$three_prime_ext<-as.integer(utr_counts$three_prime_ext)
+```
+
+
+```{r}
+p3<- ggplot(utr_counts, aes(x=three_prime_ext, y=Total_Counts)) + 
+    geom_point(size = 0.5)+
+  ylim(0, 50000)+
+  stat_poly_line() +
+  stat_poly_eq() +
+  xlab("3' UTR extension (bp)")
+  #theme_ipsum()
+
+
+
+print(p3)
+png("~/share/MVlachonikolou/r_scripts/output_plots/three_prime_ext_vs_Total_Counts.png", 
+   width     = 4.4,
+  height    = 3.15,
+  units     = "in",
+  res       = 1000,
+  pointsize = 4)
+print(p3)
+dev.off()
+
+```
+
+
+```{r}
+df_ext$three_prime_ext<-as.integer(df_ext$three_prime_ext)
+p5<-ggplot(df_ext, aes(x=three_prime_ext))+
+  geom_histogram(bins=70, fill="#69b3a2", color="#e9ecef", alpha=0.98, boundary = 0) +
+   # ggtitle("-m 20000 Extension Length Distribution") +
+  xlim(2, 20000)
+    xlab("3' UTR extension (bp)")+
+    #geom_vline(aes(xintercept=5000), colour="black")+
+    #theme_ipsum() +
+    theme(
+      plot.title = element_text(size=15)
+    )
+
+print(p5)
+
+png("~/share/MVlachonikolou/r_scripts/output_plots/UTR_length_distribution_m20000.png", 
+  width     = 4.4,
+  height    = 3.15,
+  units     = "in",
+  res       = 1000,
+  pointsize = 4)
+print(p5)
+dev.off()
+```

@@ -1,0 +1,41 @@
+---
+title: "GeneExt genes extended"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(rtracklayer)
+library(dplyr)
+library(ggplot2)
+library(ggridges)
+library(viridis)
+library(hrbrthemes)
+library(ggridges)
+```
+
+
+Converting .gtf annotation file to a data frame
+```{r}
+original <- import("~/share/MVlachonikolou/Spotted-Gar/GCF_000242695.1_LepOcu1_genomic.gtf")
+original<-data.frame(original)
+
+ext800 <- import("~/share/MVlachonikolou/Spotted-Gar/GeneExtout/Gar547_geneext_result_mv800_noorph.gtf")
+ext800 <-data.frame(ext800)
+
+ext2500 <- import("~/share/MVlachonikolou/Spotted-Gar/GeneExtout/Gar547_geneext_result_mv2500_noorph.gtf")
+ext2500<-data.frame(ext2500)
+
+ext5000 <- import("~/share/MVlachonikolou/Spotted-Gar/GeneExtout/Gar_geneext_result_mv5000.gtf")
+ext5000<-data.frame(ext5000)
+
+ext10000 <- import("~/share/MVlachonikolou/Spotted-Gar/GeneExtout/Gar547_geneext_result_mv10000_noorph.gtf")
+ext10000<-data.frame(ext10000)
+
+ext20000<- import("~/share/MVlachonikolou/Spotted-Gar/GCF_000242695.1_LepOcu1_genomic.gtf")
+ext20000<-data.frame(ext20000)
+
+```

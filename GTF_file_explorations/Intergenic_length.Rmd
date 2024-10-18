@@ -1,0 +1,278 @@
+---
+title: "Intergenic Region Length Statistics for the Spotter Gar (*Lepisosteus oculatus*)"
+author: "Maria Vlachonikolou"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+This script takes a genome annotation .gtf file as input, extracts the lengths of intergenic regions and plots their distribution. The reason for this analysis is to put the gene extension length threshold we will use for GeneExt into perspective, since very long extension lengths would cause gene overlaps which is not a common situation in nature, may cause mapping conflicts and in any case would indicate an overestimation of the 3'UTR extension length threshold. 
+
+
+
+
+Load necessary libraries. 
+```{r, message=FALSE}
+library(rtracklayer)
+library(dplyr)
+library(ggplot2)
+library(ggridges)
+library(viridis)
+```
+
+
+
+
+Import the .gtf file. Then make a data frame with the ids of the nuclear chromosomes.
+Then make a list, separately for for each strand, of all the genes. 
+```{r}
+gtf <- readGFF("~/share/MVlachonikolou/Spotted-Gar/GCF_000242695.1_LepOcu1_genomic.gtf")
+class(gtf)
+
+df_chrom<-gtf[grepl("^NC", gtf$seqid),]
+df_gene<-df_chrom[grepl("gene", df_chrom$type),]
+df_plus<-df_gene[grep("\\+", df_gene$strand),]
+df_minus<-df_gene[grepl("\\-", df_gene$strand),]
+```
+
+
+Work always separately for each strand and each chromosome. This is important so we don't have coordinate ("start", "end") conflicts. 
+Extract all the chromosome names.
+Split the gtf data frame into separate data frames based on the chromosome (seqid) and gather them in a list. 
+For each chromosome, calculate the distances between the genes and save them in a new column. 
+Save all the distances in a vector "inter_lengths_".
+```{r}
+chrm_plus<-as.vector(unique(df_plus$seqid))
+
+chr_lst_plus<-list()
+
+for (c in chrm_plus){
+  flt_chr <- df_plus[grepl(c, df_plus$seqid),]
+  chr_lst_plus[[c]] <- flt_chr
+}
+
+options(scipen = 999) #disabling scientific notation because it annoys my brain. 
+ggplot_list_plus <- list()
+
+seqid_plus<-c()
+inter_lengths_plus<-c()
+
+for (a in seq_along(chr_lst_plus)){
+  lengths<-c(0)
+  chromosome<-names(chr_lst_plus)[a]
+  
+  current_df<-data.frame(chr_lst_plus[[a]])
+  current_df<-current_df[order(current_df$start),]
+  
+  for (b in 2:nrow(current_df)){
+    distance = current_df[b, "start"]-current_df[b-1, "end"]
+    lengths<-c(lengths, distance)
+    
+  }
+  chr_lst_plus[[chromosome]]$inter_lengths<-lengths
+ 
+  seqid_plus<-c(seqid_plus, as.vector(current_df$seqid[2:nrow(current_df)]))
+  inter_lengths_plus<-c(inter_lengths_plus, lengths[2:length(lengths)])
+  
+}
+
+```
+
+
+```{r}
+df_inter_plus <- do.call(rbind, chr_lst_plus)
+cat("The median intergenic length for the genes in the forward strand is", median(df_inter_plus$inter_lengths), ".\n")
+```
+
+
+Repeat the same for the Reverse (-) strand. 
+```{r}
+chrm_minus<-as.vector(unique(df_minus$seqid))
+
+chr_lst_minus<-list()
+
+for (c in chrm_minus){
+  flt_chr <- df_minus[grepl(c, df_minus$seqid),]
+  chr_lst_minus[[c]] <- flt_chr
+}
+
+options(scipen = 999)
+ggplot_list_minus <- list()
+
+seqid_minus<-c()
+inter_lengths_minus<-c()
+
+for (a in seq_along(chr_lst_minus)){
+  lengths<-c(0)
+  chromosome<-names(chr_lst_minus)[a]
+  
+  current_df<-data.frame(chr_lst_minus[[a]])
+  current_df<-current_df[order(current_df$start),]
+  
+  for (b in 2:nrow(current_df)){
+    distance = current_df[b, "start"]-current_df[b-1, "end"]
+    lengths<-c(lengths, distance)
+    
+  }
+  chr_lst_minus[[chromosome]]$inter_lengths<-lengths
+ 
+  seqid_minus<-c(seqid_minus, as.vector(current_df$seqid[2:nrow(current_df)]))
+  inter_lengths_minus<-c(inter_lengths_minus, lengths[2:length(lengths)])
+  
+}
+
+```
+
+```{r}
+df_inter_minus <- do.call(rbind, chr_lst_minus)
+cat("The median intergenic length for the genes in the reverse strand is", median(df_inter_minus$inter_lengths), ".\n")
+```
+
+```{r}
+df_inter_all<-rbind(df_inter_minus, df_inter_plus)
+cat("The median intergenic length for the genes in the reverse strand is", median(df_inter_all$inter_lengths), ".\n")
+
+
+```
+
+
+Looks like genes are uniformly distributed between strands. 
+
+
+
+
+```{r}
+cat(sum(df_inter_all$inter_lengths < 0), "out of the", length(df_inter_all), "intergenic lengths are negative, meaning these genes overlap.\n")
+```
+
+
+
+
+
+Plot 
+```{r, fig.width=15, fig.height=9}
+p1<-ggplot(df_inter_all, aes(x=inter_lengths))+
+  geom_histogram(bins=80, fill="#5e6269", color="#e9ecef", alpha=0.98, boundary = 0) +
+    ggtitle("Intergenic Length Distribution - Spotted Gar") +
+    geom_vline(aes(xintercept=median(df_inter_all$inter_lengths)), colour="#3489eb")+
+    xlim(0, 250000)+
+    #theme_ipsum() +
+    theme(
+      plot.title = element_text(size=15)
+    )
+
+print(p1)
+
+
+
+png("~/share/MVlachonikolou/r_scripts_refined/output_plots/Spotted_Gar_intergenic_lengths.png", 
+  width     = 6.25,
+  height    = 3.25,
+  units     = "in",
+  res       = 1000,
+  pointsize = 4)
+print(p1)
+dev.off()
+```
+
+
+
+
+
+Plot also per chromosome: 
+
+```{r, fig.width=18, fig.height=10}
+chrno<-length(chrm_plus)
+chrquart<-as.integer(chrno/8)
+interplot_plus<-data.frame(seqid_plus, inter_lengths_plus)
+chrsubsets<-list()
+e<-1
+for (i in 0:6){
+  chrsubset<-chrm_plus[(i*chrquart+1):(e*chrquart)]
+  chrsubsets[[e]]<-chrsubset
+  e<-e+1
+
+}
+chrsubsets[[(e)]]<-chrm_plus[(7*chrquart+1):chrno]
+
+interplots<-list()
+
+for (i in seq_along(chrsubsets)){
+  abc<-interplot_plus$seqid_plus %in% chrsubsets[[i]]
+  interplot_plus1<-interplot_plus[abc, ]
+  interplots[[i]]<-interplot_plus1
+  
+}
+
+
+ggvioln<-function(sbst, filename){
+  p<-ggplot(sbst, aes(x=sbst$seqid_plus, y=sbst$inter_lengths_plus, fill=sbst$seqid_plus))+ 
+  geom_violin(width=0.7)+
+  geom_boxplot(width=0.1, color="white", alpha=0.2)+
+  scale_fill_viridis(discrete = TRUE) +
+  # theme_ipsum() +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  ggtitle("Intergenic Region Length Distribution per Chromosome, + strand - Spotted Gar") +
+  xlab("Chromosome")+
+  ylab("Intergenic length")+
+  ylim(-100000, 350000)
+  
+  ggsave(filename, plot = p, width = 10, height = 6, units = "in", dpi = 400)
+
+#print(p)
+}
+
+filenames <- paste0("output_plots/interplot_plus_", 1:length(interplots), ".png")
+
+
+lapply(seq_along(interplots), function(i) ggvioln(interplots[[i]], filenames[i]))
+  
+```
+
+
+```{r, fig.width=20, fig.height=10}
+ p<-ggplot(interplots[[1]], aes(x=seqid_plus, y=inter_lengths_plus, fill=seqid_plus))+ 
+  geom_violin(width=6.3)+
+  #geom_boxplot(width=0.1, color="white", alpha=0.2)+
+  scale_fill_viridis(discrete = TRUE) +
+  # theme_ipsum() +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  ggtitle("Intergenic Region Length Distribution per Chromosome, + strand - Spotted Gar") +
+  xlab("Chromosome")+
+  ylab("Intergenic length")+
+  ylim(-100000, 250000)
+
+
+print(p)
+
+
+```
+
+
+
+```{r}
+plus_stats<-matrix( ,nrow=length(chrm_plus), ncol=2)
+rownames(plus_stats)<-chrm_plus    
+colnames(plus_stats)<-c("mean", "median")
+
+for (a in chrm_plus){
+  plus_stats[a,1]<-mean(chr_lst_plus[[a]]$inter_lengths)
+  plus_stats[a,2]<-median(chr_lst_plus[[a]]$inter_lengths)
+}
+plot(plus_stats, main="Intergenic Length per Chromosome - Plus Strand")
+```
+
+
+
+
+
+## Session Info
+
+```{r session-info}
+sessionInfo()
+```
+

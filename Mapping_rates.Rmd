@@ -1,0 +1,165 @@
+---
+title: "Mapping Rate Barplots"
+author: "Maria Vlachonikolou"
+date: "`r Sys.Date()`"
+output:
+    pdf_document: default
+
+---
+
+```{r}
+library(ggplot2)
+```
+
+Gar_SN547MapSolo.out
+Reads Mapped to Genome: Unique+Multiple,0.909573
+Reads Mapped to Genome: Unique,0.882269
+Reads Mapped to GeneFull: Unique+Multiple GeneFull,0.456065
+Reads Mapped to GeneFull: Unique GeneFull,0.45049
+
+Gar_SN622
+Number of Reads,203367204
+Reads With Valid Barcodes,0.96164
+Sequencing Saturation,0.369067
+Q30 Bases in CB+UMI,0.971878
+Q30 Bases in RNA read,0.938005
+Reads Mapped to Genome: Unique+Multiple,0.915099
+Reads Mapped to Genome: Unique,0.889201
+Reads Mapped to GeneFull: Unique+Multiple GeneFull,0.565538
+Reads Mapped to GeneFull: Unique GeneFull,0.559922
+Estimated Number of Cells,14991
+Unique Reads in Cells Mapped to GeneFull,59788634
+Fraction of Unique Reads in Cells,0.525061
+Mean Reads per Cell,3988
+Median Reads per Cell,2827
+UMIs in Cells,37449346
+Mean UMI per Cell,2498
+Median UMI per Cell,1779
+Mean GeneFull per Cell,1393
+Median GeneFull per Cell,1193
+Total GeneFull Detected,20615
+
+Gar_SN623
+Number of Reads,280010700
+Reads With Valid Barcodes,0.960865
+Sequencing Saturation,0.344369
+Q30 Bases in CB+UMI,0.95818
+Q30 Bases in RNA read,0.923326
+Reads Mapped to Genome: Unique+Multiple,0.911773
+Reads Mapped to Genome: Unique,0.886553
+Reads Mapped to GeneFull: Unique+Multiple GeneFull,0.564291
+Reads Mapped to GeneFull: Unique GeneFull,0.558631
+Estimated Number of Cells,18891
+Unique Reads in Cells Mapped to GeneFull,87594165
+Fraction of Unique Reads in Cells,0.559984
+Mean Reads per Cell,4636
+Median Reads per Cell,3359
+UMIs in Cells,57064015
+Mean UMI per Cell,3020
+Median UMI per Cell,2203
+Mean GeneFull per Cell,1606
+Median GeneFull per Cell,1409
+Total GeneFull Detected,20825
+
+
+Gar_SN624
+Number of Reads,277676843
+Reads With Valid Barcodes,0.957143
+Sequencing Saturation,0.496653
+Q30 Bases in CB+UMI,0.963944
+Q30 Bases in RNA read,0.926448
+Reads Mapped to Genome: Unique+Multiple,0.91357
+Reads Mapped to Genome: Unique,0.887572
+Reads Mapped to GeneFull: Unique+Multiple GeneFull,0.502851
+Reads Mapped to GeneFull: Unique GeneFull,0.497346
+Estimated Number of Cells,15542
+Unique Reads in Cells Mapped to GeneFull,86629286
+Fraction of Unique Reads in Cells,0.627287
+Mean Reads per Cell,5573
+Median Reads per Cell,3411
+UMIs in Cells,43219780
+Mean UMI per Cell,2780
+Median UMI per Cell,1716
+Mean GeneFull per Cell,1474
+Median GeneFull per Cell,1175
+Total GeneFull Detected,20815
+
+Gar_SN547_Ensembl
+Number of Reads,318409750
+Reads With Valid Barcodes,0.95457
+Sequencing Saturation,0.657227
+Q30 Bases in CB+UMI,0.970268
+Q30 Bases in RNA read,0.906186
+Reads Mapped to Genome: Unique+Multiple,0.909465
+Reads Mapped to Genome: Unique,0.882204
+Reads Mapped to GeneFull: Unique+Multiple GeneFull,0.315382
+Reads Mapped to GeneFull: Unique GeneFull,0.310976
+Estimated Number of Cells,6598
+Unique Reads in Cells Mapped to GeneFull,65015763
+Fraction of Unique Reads in Cells,0.656608
+Mean Reads per Cell,9853
+Median Reads per Cell,7508
+UMIs in Cells,22151076
+Mean UMI per Cell,3357
+Median UMI per Cell,2559
+Mean GeneFull per Cell,1748
+Median GeneFull per Cell,1594
+Total GeneFull Detected,20483
+
+
+
+```{r}
+# create a dataset
+Sample <- c("L. oculatus_SN547_NCBI", "L. oculatus_SN547_NCBI","L. oculatus_SN547_Ensembl", "L. oculatus_SN547_Ensembl", "L. oculatus_SN622_NCBI", "L. oculatus_SN622_NCBI", "L. oculatus_SN623_NCBI", "L. oculatus_SN623_NCBI", "L. oculatus_SN624_NCBI", "L. oculatus_SN624_NCBI")
+condition <- (rep(c("Genome", "Genic"), 5))
+value <- c(0.909573, 0.456065, 0.909465, 0.315382, 0.915099, 0.565538, 0.911773, 0.564291, 0.91357,  0.502851)
+data <- data.frame(Sample, condition, value)
+
+# Calculate the intergenic values
+intergenic_values <- data$value[data$condition == "Genome"] - data$value[data$condition == "Genic"]
+
+# Create a new data frame for the intergenic condition
+intergenic_data <- data.frame(Sample = unique(Sample), condition = "Intergenic", value = intergenic_values)
+
+# Combine the original data with the intergenic data
+data <- rbind(data, intergenic_data)
+
+# Filter the data to include only "Intergenic" and "Transcriptome"
+filtered_data <- data[data$condition %in% c("Genic", "Intergenic"), ]
+filtered_data$condition <- factor(filtered_data$condition, levels = c("Intergenic", "Genic"))
+filtered_data$value <- filtered_data$value * 100
+
+# Reorder the Sample factor with _Ensembl first
+filtered_data$Sample <- factor(filtered_data$Sample, levels = c( "L. oculatus_SN624_NCBI",
+                                                                "L. oculatus_SN623_NCBI", 
+                                                                "L. oculatus_SN622_NCBI", 
+                                                                "L. oculatus_SN547_NCBI",
+                                                                "L. oculatus_SN547_Ensembl"))
+
+```
+
+
+
+
+
+```{r}
+pdf("~/share/MVlachonikolou/r_scripts_refined/output_plots/Mapping_rate_stacked.pdf", width = 7.25, height = 2.75)
+
+# Create a stacked bar plot
+ggplot(filtered_data, aes(x = Sample, y = value, fill = condition)) +
+  geom_bar(stat = "identity", , width = 0.35) +
+  coord_flip() +  # Make the bars horizontal
+  scale_fill_manual(values = c("Intergenic" = "#7D9879", "Genic" = "#36612F")) +  # Customize colors
+  labs(x = "Sample", y = "Value") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(angle = 0, hjust = 1))+
+  ylab("Mapping Rate (%)")+
+  ylim(0, 100)
+dev.off()
+```
+
+
+
+
+
+
