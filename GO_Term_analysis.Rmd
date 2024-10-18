@@ -1,5 +1,5 @@
 ---
-title: "GO Term Analysis for Mature vs Juc Marker Genes "
+title: "GO Term Analysis for Mature vs Juvenile Marker Genes "
 output: pdf_document
 ---
 
